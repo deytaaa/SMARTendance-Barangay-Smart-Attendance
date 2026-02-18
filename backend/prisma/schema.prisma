@@ -1,0 +1,136 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// User roles enum
+enum Role {
+  ADMIN
+  STAFF
+  OFFICIAL
+  VOLUNTEER
+}
+
+// Attendance status enum
+enum AttendanceStatus {
+  ON_TIME
+  LATE
+  ABSENT
+  HALF_DAY
+}
+
+// User model
+model User {
+  id            Int          @id @default(autoincrement())
+  email         String       @unique
+  password      String
+  firstName     String
+  lastName      String
+  profileImage  String?      @db.Text // Store profile image as base64
+  contactNumber String?
+  address       String?
+  role          Role         @default(STAFF)
+  faceEncoding  String?      @db.Text // Store face encoding as JSON string
+  isActive      Boolean      @default(true)
+  
+  barangayId    Int?
+  barangay      Barangay?    @relation(fields: [barangayId], references: [id])
+  
+  departmentId  Int?
+  department    Department?  @relation(fields: [departmentId], references: [id])
+  
+  attendance    Attendance[]
+  
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  
+  @@index([email])
+  @@index([barangayId])
+  @@index([departmentId])
+}
+
+// Barangay model
+model Barangay {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  location    String?
+  contact     String?
+  description String?
+  
+  users       User[]
+  departments Department[]
+  devices     Device[]
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+// Department model
+model Department {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  
+  barangayId  Int
+  barangay    Barangay @relation(fields: [barangayId], references: [id], onDelete: Cascade)
+  
+  users       User[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([barangayId])
+}
+
+// Attendance model
+model Attendance {
+  id           Int               @id @default(autoincrement())
+  date         DateTime          @default(now()) @db.Date
+  checkInTime  DateTime?
+  checkOutTime DateTime?
+  status       AttendanceStatus  @default(ON_TIME)
+  remarks      String?
+  
+  userId       Int
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  deviceId     Int?
+  device       Device?           @relation(fields: [deviceId], references: [id])
+  
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  
+  @@unique([userId, date]) // One attendance record per user per day
+  @@index([userId])
+  @@index([date])
+  @@index([deviceId])
+}
+
+// IoT Device model
+model Device {
+  id          Int          @id @default(autoincrement())
+  deviceId    String       @unique // Unique identifier for the device (e.g., "rpi_001")
+  name        String
+  location    String?
+  secretKey   String       // Secret key for device authentication
+  isActive    Boolean      @default(true)
+  lastSeen    DateTime?
+  
+  barangayId  Int?
+  barangay    Barangay?    @relation(fields: [barangayId], references: [id])
+  
+  attendance  Attendance[]
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  @@index([deviceId])
+}
