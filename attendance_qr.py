@@ -9,10 +9,36 @@ import numpy as np
 
 # Configuration
 API_URL = "http://localhost:5000/api"  # Update with your backend URL
-WEBCAM_INDEX = 1  # Usually 1 for physical USB webcam
+PREFERRED_CAMERA = 1  # Set to 0 for built-in, 1 for external USB camera, etc.
 
 # Global variable to store auth token
 auth_token = None
+
+# Try to find available camera
+def find_camera():
+    """Try preferred camera first, then fall back to other indices"""
+    # Try preferred camera first
+    cap = cv2.VideoCapture(PREFERRED_CAMERA)
+    if cap.isOpened():
+        ret, frame = cap.read()
+        if ret:
+            print(f"✅ Using preferred camera at index {PREFERRED_CAMERA}")
+            return cap, PREFERRED_CAMERA
+        cap.release()
+    
+    # If preferred fails, try other cameras
+    print(f"⚠️  Camera {PREFERRED_CAMERA} not available, searching for alternatives...")
+    for index in [0, 1, 2]:
+        if index == PREFERRED_CAMERA:
+            continue  # Already tried this one
+        cap = cv2.VideoCapture(index)
+        if cap.isOpened():
+            ret, frame = cap.read()
+            if ret:
+                print(f"✅ Found working camera at index {index}")
+                return cap, index
+            cap.release()
+    return None, -1
 
 # Login function
 def login():
@@ -195,14 +221,16 @@ def decode_qr_data(qr_data):
     """
     QR code can contain:
     - Simple user ID: "123"
-    - JSON: {"id": 123, "name": "John Doe"}
+    - JSON: {"id": 123, "name": "John Doe"} or {"employee_id": 123, ...}
     - URL format: "smartendance://user/123"
     """
     try:
         # Try JSON format first
         if qr_data.startswith('{'):
             data = json.loads(qr_data)
-            return str(data.get('id', data.get('userId', '')))
+            # Try multiple key formats
+            user_id = data.get('id') or data.get('userId') or data.get('employee_id')
+            return str(user_id) if user_id else None
         
         # Try URL format
         if 'smartendance://' in qr_data:
@@ -215,7 +243,8 @@ def decode_qr_data(qr_data):
             return qr_data
         
         return None
-    except:
+    except Exception as e:
+        print(f"⚠️  Error decoding QR: {e}")
         return None
 
 # Main loop
@@ -232,12 +261,24 @@ def main():
     print("Loading employee list...")
     user_lookup = load_users()
     
-    cap = cv2.VideoCapture(WEBCAM_INDEX)
-    if not cap.isOpened():
-        print("❌ Error: Cannot open webcam")
+    print("Searching for camera...")
+    cap, camera_index = find_camera()
+    
+    if cap is None or not cap.isOpened():
+        print("\n❌ Error: Cannot open any camera!")
+        print("💡 Troubleshooting:")
+        print("   1. Close any browser tabs or apps using the camera")
+        print("   2. Check Windows camera privacy settings")
+        print("   3. Try unplugging and replugging USB camera")
+        print("   4. Make sure camera is not disabled in Device Manager")
         return
     
-    print("\n🎯 QR Attendance Scanner ready!")
+    # Configure camera for better performance
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FPS, 30)
+    
+    print(f"\n🎯 QR Attendance Scanner ready! (Camera {camera_index})")
     print("📱 Show QR code to camera for attendance")
     print("   • First scan of day = CHECK-IN")
     print("   • Second scan of day = CHECK-OUT") 
@@ -245,13 +286,27 @@ def main():
     print("=" * 50)
     
     last_scan_time = {}
-    SCAN_COOLDOWN = 3  # 3 seconds between same QR scans
+    SCAN_COOLDOWN = 5  # 5 seconds between same QR scans to prevent accidental double scans
+    
+    frame_error_count = 0
+    MAX_FRAME_ERRORS = 10
     
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("❌ Error reading frame")
-            break
+            frame_error_count += 1
+            print(f"❌ Error reading frame (attempt {frame_error_count}/{MAX_FRAME_ERRORS})")
+            
+            if frame_error_count >= MAX_FRAME_ERRORS:
+                print("\n❌ Too many frame read errors. Camera may be disconnected or in use.")
+                print("💡 Try closing other applications using the camera")
+                break
+            
+            time.sleep(0.5)  # Wait before retrying
+            continue
+        
+        # Reset error count on successful frame read
+        frame_error_count = 0
             
         # Detect QR codes
         qr_codes = pyzbar.decode(frame)
@@ -261,44 +316,57 @@ def main():
                 # Get QR code data
                 qr_data = qr_code.data.decode('utf-8')
                 
+                # Debug: show raw QR data
+                print(f"\n🔍 Raw QR data: '{qr_data}'")
+                
                 # Decode user ID from QR data
                 user_id = decode_qr_data(qr_data)
                 
                 if user_id:
-                    current_time = time.time()
+                    # Check if user exists in system
+                    if user_id not in user_lookup:
+                        print(f"⚠️  User ID {user_id} not found in system!")
+                        print(f"💡 Valid user IDs: {', '.join(user_lookup.keys())}")
+                        print(f"💡 Generate new QR cards by running: python generate_qr_cards.py")
+                        continue
+                else:
+                    print(f"❌ Invalid QR code format. Expected user ID but got: '{qr_data}'")
+                    continue
+                
+                current_time = time.time()
+                
+                # Check cooldown to prevent duplicate scans
+                if user_id not in last_scan_time or \
+                   (current_time - last_scan_time[user_id]) > SCAN_COOLDOWN:
                     
-                    # Check cooldown to prevent duplicate scans
-                    if user_id not in last_scan_time or \
-                       (current_time - last_scan_time[user_id]) > SCAN_COOLDOWN:
-                        
-                        # Get user name if available
-                        user_name = user_lookup.get(user_id, f"User {user_id}")
-                        
-                        print(f"\n📱 QR Code scanned: {user_name} (ID: {user_id})")
-                        
-                        # Record attendance
-                        try:
-                            if record_attendance(user_id):
-                                last_scan_time[user_id] = current_time
-                                # Draw green rectangle around QR code
-                                points = qr_code.polygon
-                                if len(points) == 4:
-                                    pts = np.array([[point.x, point.y] for point in points], np.int32)
-                                    cv2.fillPoly(frame, [pts], (0, 255, 0, 50))
-                            else:
-                                last_scan_time[user_id] = current_time
-                        except Exception as e:
-                            print(f"⚠️  Attendance failed: {e}")
+                    # Get user name
+                    user_name = user_lookup[user_id]
+                    
+                    print(f"📱 QR Code scanned: {user_name} (ID: {user_id})")
+                    
+                    # Record attendance
+                    try:
+                        if record_attendance(user_id):
                             last_scan_time[user_id] = current_time
-                    else:
-                        # Draw blue rectangle for cooldown
-                        points = qr_code.polygon
-                        if len(points) == 4:
-                            pts = np.array([[point.x, point.y] for point in points], np.int32)
-                            cv2.fillPoly(frame, [pts], (255, 0, 0, 50))
-                        
-                        user_name = user_lookup.get(user_id, f"User {user_id}")
-                        print(f"⏳ {user_name} in cooldown...")
+                            # Draw green rectangle around QR code
+                            points = qr_code.polygon
+                            if len(points) == 4:
+                                pts = np.array([[point.x, point.y] for point in points], np.int32)
+                                cv2.fillPoly(frame, [pts], (0, 255, 0, 50))
+                        else:
+                            last_scan_time[user_id] = current_time
+                    except Exception as e:
+                        print(f"⚠️  Attendance failed: {e}")
+                        last_scan_time[user_id] = current_time
+                else:
+                    # Draw blue rectangle for cooldown
+                    points = qr_code.polygon
+                    if len(points) == 4:
+                        pts = np.array([[point.x, point.y] for point in points], np.int32)
+                        cv2.fillPoly(frame, [pts], (255, 0, 0, 50))
+                    
+                    user_name = user_lookup.get(user_id, f"User {user_id}")
+                    print(f"⏳ {user_name} in cooldown...")
                 
                 # Draw QR code boundary
                 points = qr_code.polygon
