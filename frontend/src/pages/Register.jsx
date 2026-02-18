@@ -57,29 +57,37 @@ const Register = () => {
     };
   }, [stream]);
 
-  const startCamera = async () => {
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 640, height: 480 } 
-      });
-      setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
+  // Handle camera stream when captureMode changes
+  useEffect(() => {
+    const initCamera = async () => {
+      if (captureMode && videoRef.current) {
+        try {
+          const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: 640, height: 480, facingMode: 'user' } 
+          });
+          setStream(mediaStream);
+          videoRef.current.srcObject = mediaStream;
+        } catch (err) {
+          setError('Unable to access camera. Please check permissions.');
+          console.error('Camera error:', err);
+          setCaptureMode(false);
+        }
       }
-      setCaptureMode(true);
-    } catch (err) {
-      setError('Unable to access camera. Please check permissions.');
-      console.error('Camera error:', err);
+    };
+    
+    if (captureMode) {
+      initCamera();
     }
+  }, [captureMode]);
+
+  const startCamera = () => {
+    setCaptureMode(true);
   };
 
   const stopCamera = () => {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
-    }
-    if (captureMode) {
-      stopCamera();
     }
     setCaptureMode(false);
   };
@@ -276,7 +284,9 @@ const Register = () => {
                       ref={videoRef}
                       autoPlay
                       playsInline
+                      muted
                       className="w-full h-auto"
+                      style={{ minHeight: '240px' }}
                     />
                   </div>
                   <div className="flex gap-3">

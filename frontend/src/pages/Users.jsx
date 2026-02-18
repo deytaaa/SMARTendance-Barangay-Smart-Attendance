@@ -408,7 +408,7 @@ function Users() {
                   )}
                   {captureMode === 'camera' && (
                     <div className="flex flex-col items-center mt-2">
-                      <video ref={videoRef} autoPlay playsInline width={96} height={96} className="rounded mb-2 border" />
+                      <video ref={videoRef} autoPlay playsInline muted width={96} height={96} className="rounded mb-2 border" />
                       <canvas ref={canvasRef} width={96} height={96} style={{ display: 'none' }} />
                       <button
                         type="button"
