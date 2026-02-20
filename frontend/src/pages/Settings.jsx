@@ -53,6 +53,7 @@ function Settings() {
   const [departments, setDepartments] = useState([]);
   const [newDepartment, setNewDepartment] = useState('');
   const [editingDept, setEditingDept] = useState(null);
+  const [barangayId, setBarangayId] = useState(null);
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -80,6 +81,12 @@ function Settings() {
       if (response.data) {
         setBarangaySettings(response.data);
       }
+      
+      // Also fetch barangay ID for department creation
+      const barangaysResponse = await barangayAPI.getAll();
+      if (barangaysResponse.data && barangaysResponse.data.length > 0) {
+        setBarangayId(barangaysResponse.data[0].id);
+      }
     } catch (err) {
       console.error('Failed to load settings:', err);
     }
@@ -88,7 +95,7 @@ function Settings() {
   const fetchDepartments = async () => {
     try {
       const response = await departmentAPI.getAll();
-      setDepartments(response.data.departments || []);
+      setDepartments(response.data.data || []);
     } catch (err) {
       console.error('Failed to load departments:', err);
     }
@@ -137,12 +144,20 @@ function Settings() {
 
   const addDepartment = async () => {
     if (!newDepartment.trim()) return;
+    
+    if (!barangayId) {
+      setError('Barangay information not loaded. Please refresh the page.');
+      return;
+    }
 
     setLoading(true);
     setError('');
     
     try {
-      await departmentAPI.create({ name: newDepartment });
+      await departmentAPI.create({ 
+        name: newDepartment,
+        barangayId: barangayId 
+      });
       setNewDepartment('');
       setSuccess('Department added successfully!');
       fetchDepartments();

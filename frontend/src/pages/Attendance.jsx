@@ -12,7 +12,8 @@ import {
   X,
   Search,
   Calendar,
-  QrCode
+  QrCode,
+  RefreshCw
 } from 'lucide-react';
 
 function Attendance() {
@@ -24,6 +25,8 @@ function Attendance() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [viewMode, setViewMode] = useState('today'); // 'today' or 'date'
+  const [autoRefresh, setAutoRefresh] = useState(true); // Auto-refresh enabled by default
+  const [lastRefresh, setLastRefresh] = useState(new Date());
 
   useEffect(() => {
     if (viewMode === 'today') {
@@ -33,11 +36,28 @@ function Attendance() {
     }
   }, [selectedDate, viewMode]);
 
+  // Auto-refresh interval - refreshes every 5 seconds when enabled
+  useEffect(() => {
+    if (!autoRefresh) return;
+
+    const interval = setInterval(() => {
+      if (viewMode === 'today') {
+        fetchTodayAttendance();
+      } else {
+        fetchAttendanceByDate();
+      }
+      setLastRefresh(new Date());
+    }, 5000); // Refresh every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [autoRefresh, viewMode, selectedDate]);
+
   const fetchTodayAttendance = async () => {
     try {
       setLoading(true);
       const response = await attendanceAPI.getToday();
       setAttendance(response.data.data || []);
+      setLastRefresh(new Date());
     } catch (error) {
       console.error('Error fetching attendance:', error);
     } finally {
@@ -53,10 +73,19 @@ function Attendance() {
         limit: 100 // Get more records for historical view
       });
       setAttendance(response.data.data || []);
+      setLastRefresh(new Date());
     } catch (error) {
       console.error('Error fetching attendance:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleManualRefresh = () => {
+    if (viewMode === 'today') {
+      fetchTodayAttendance();
+    } else {
+      fetchAttendanceByDate();
     }
   };
 
@@ -196,6 +225,35 @@ function Attendance() {
                     Select Date
                   </button>
                 </div>
+
+                {/* Auto-refresh Toggle */}
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleManualRefresh}
+                    disabled={loading}
+                    className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                    title="Refresh now"
+                  >
+                    <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+                  </button>
+                  
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoRefresh}
+                      onChange={(e) => setAutoRefresh(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700 font-medium">Auto-refresh</span>
+                  </label>
+                  
+                  {autoRefresh && (
+                    <div className="flex items-center gap-1 text-xs text-green-600">
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                      <span>Live</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Bottom Row: Date Information/Picker */}
@@ -234,7 +292,10 @@ function Attendance() {
                 )}
                 
                 <div className="text-sm text-gray-500">
-                  {attendance.length} record{attendance.length !== 1 ? 's' : ''} found
+                  <div>{attendance.length} record{attendance.length !== 1 ? 's' : ''} found</div>
+                  <div className="text-xs mt-1">
+                    Last updated: {lastRefresh.toLocaleTimeString()}
+                  </div>
                 </div>
               </div>
             </div>
