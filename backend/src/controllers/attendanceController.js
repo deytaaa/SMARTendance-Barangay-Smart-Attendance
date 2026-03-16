@@ -68,12 +68,23 @@ exports.checkIn = async (req, res, next) => {
 
     // Determine attendance status (on time vs late)
     const checkInTime = timestamp ? new Date(timestamp) : new Date();
+
+    // Fetch cutoffTime from system settings
+    const systemSettings = await prisma.systemSettings.findFirst({
+      where: { key: 'default' },
+    });
+    let cutoffTime = systemSettings?.cutoffTime || '09:00';
+
+    // Parse cutoffTime (format: HH:mm)
+    const [cutoffHour, cutoffMinute] = cutoffTime.split(':').map(Number);
     const checkInHour = checkInTime.getHours();
     const checkInMinute = checkInTime.getMinutes();
-    
-    // Consider late if after 9:00 AM
+
     let status = 'ON_TIME';
-    if (checkInHour > 9 || (checkInHour === 9 && checkInMinute > 0)) {
+    if (
+      checkInHour > cutoffHour ||
+      (checkInHour === cutoffHour && checkInMinute > cutoffMinute)
+    ) {
       status = 'LATE';
     }
 
