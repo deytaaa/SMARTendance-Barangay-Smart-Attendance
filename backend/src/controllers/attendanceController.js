@@ -1,4 +1,15 @@
 const prisma = require('../config/database');
+const { emitScopedAttendanceUpdate } = require('../socket');
+
+const emitAttendanceUpdated = (payload) => {
+  try {
+    emitScopedAttendanceUpdate(payload);
+  } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('Socket emit skipped:', error.message);
+    }
+  }
+};
 
 // @desc    Record check-in (from IoT device or manual)
 // @route   POST /api/attendance/check-in
@@ -23,6 +34,8 @@ exports.checkIn = async (req, res, next) => {
         lastName: true,
         email: true,
         role: true,
+        barangayId: true,
+        departmentId: true,
         department: { select: { name: true } },
       },
     });
@@ -84,6 +97,15 @@ exports.checkIn = async (req, res, next) => {
           },
         });
 
+    emitAttendanceUpdated({
+      action: 'CHECK_IN',
+      userId: user.id,
+      attendanceId: attendance.id,
+      role: user.role,
+      barangayId: user.barangayId,
+      departmentId: user.departmentId,
+    });
+
     res.status(200).json({
       success: true,
       message: `Welcome, ${user.firstName}!`,
@@ -125,6 +147,9 @@ exports.checkOut = async (req, res, next) => {
         id: true,
         firstName: true,
         lastName: true,
+        role: true,
+        barangayId: true,
+        departmentId: true,
       },
     });
 
@@ -169,6 +194,15 @@ exports.checkOut = async (req, res, next) => {
       data: { checkOutTime },
     });
 
+    emitAttendanceUpdated({
+      action: 'CHECK_OUT',
+      userId: user.id,
+      attendanceId: updatedAttendance.id,
+      role: user.role,
+      barangayId: user.barangayId,
+      departmentId: user.departmentId,
+    });
+
     // Calculate hours worked
     const hoursWorked = (checkOutTime - attendance.checkInTime) / (1000 * 60 * 60);
 
@@ -195,7 +229,7 @@ exports.checkOut = async (req, res, next) => {
 // @access  Private/Admin/Staff
 exports.getAllAttendance = async (req, res, next) => {
   try {
-    const { date, userId, status, page = 1, limit = 20 } = req.query;
+    const { date, userId, status, departmentId, page = 1, limit = 20 } = req.query;
 
     const where = {};
 
@@ -207,6 +241,7 @@ exports.getAllAttendance = async (req, res, next) => {
 
     if (userId) where.userId = parseInt(userId);
     if (status) where.status = status;
+    if (departmentId) where.user = { departmentId: parseInt(departmentId) };
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -220,7 +255,8 @@ exports.getAllAttendance = async (req, res, next) => {
               firstName: true,
               lastName: true,
               email: true,
-              department: { select: { name: true } },
+              role: true,
+              department: { select: { id: true, name: true } },
             },
           },
           device: {
@@ -255,11 +291,15 @@ exports.getAllAttendance = async (req, res, next) => {
 // @access  Private/Admin/Staff
 exports.getTodayAttendance = async (req, res, next) => {
   try {
+    const { departmentId } = req.query;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const where = { date: today };
+    if (departmentId) where.user = { departmentId: parseInt(departmentId) };
+
     const attendance = await prisma.attendance.findMany({
-      where: { date: today },
+      where,
       include: {
         user: {
           select: {
@@ -268,7 +308,7 @@ exports.getTodayAttendance = async (req, res, next) => {
             lastName: true,
             email: true,
             role: true,
-            department: { select: { name: true } },
+            department: { select: { id: true, name: true } },
           },
         },
       },
@@ -450,8 +490,38 @@ exports.deleteAttendance = async (req, res, next) => {
   try {
     const { id } = req.params;
 
+    const existingAttendance = await prisma.attendance.findUnique({
+      where: { id: parseInt(id) },
+      include: {
+        user: {
+          select: {
+            id: true,
+            role: true,
+            barangayId: true,
+            departmentId: true,
+          },
+        },
+      },
+    });
+
+    if (!existingAttendance) {
+      return res.status(404).json({
+        success: false,
+        message: 'Attendance record not found',
+      });
+    }
+
     await prisma.attendance.delete({
       where: { id: parseInt(id) },
+    });
+
+    emitAttendanceUpdated({
+      action: 'DELETE',
+      userId: existingAttendance.user.id,
+      attendanceId: existingAttendance.id,
+      role: existingAttendance.user.role,
+      barangayId: existingAttendance.user.barangayId,
+      departmentId: existingAttendance.user.departmentId,
     });
 
     res.status(200).json({

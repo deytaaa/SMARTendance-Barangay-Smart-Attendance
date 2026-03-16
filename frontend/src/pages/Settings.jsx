@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { barangayAPI, departmentAPI } from '../services/api';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
+import { barangayAPI, departmentAPI, systemAPI } from '../services/api';
 import { 
   Users, 
   UserPlus, 
@@ -25,8 +25,8 @@ import {
 function Settings() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { tabId } = useParams();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState('system');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -57,7 +57,7 @@ function Settings() {
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: UserPlus, label: 'Register Employee', path: '/register' },
+    { icon: UserPlus, label: 'Enroll Employee', path: '/register' },
     { icon: Users, label: 'User Management', path: '/users' },
     { icon: ClipboardCheck, label: 'Attendance', path: '/attendance' },
     { icon: QrCode, label: 'QR Card Manager', path: '/qr-manager' },
@@ -70,6 +70,19 @@ function Settings() {
     { id: 'departments', label: 'Departments', icon: Users },
   ];
 
+  const validTabIds = tabs.map((tab) => tab.id);
+  const activeTab = validTabIds.includes(tabId) ? tabId : 'system';
+
+  useEffect(() => {
+    if (!tabId || !validTabIds.includes(tabId)) {
+      navigate('/settings/system', { replace: true });
+    }
+  }, [navigate, tabId, validTabIds]);
+
+  const isMenuItemActive = (path) => {
+    return location.pathname === path || location.pathname.startsWith(`${path}/`);
+  };
+
   useEffect(() => {
     fetchSettings();
     fetchDepartments();
@@ -77,15 +90,22 @@ function Settings() {
 
   const fetchSettings = async () => {
     try {
-      const response = await barangayAPI.getSettings();
-      if (response.data) {
-        setBarangaySettings(response.data);
+      const [systemResponse, barangayResponse, barangaysResponse] = await Promise.all([
+        systemAPI.getSettings(),
+        barangayAPI.getSettings(),
+        barangayAPI.getAll(),
+      ]);
+
+      if (systemResponse.data?.data) {
+        setSystemSettings(systemResponse.data.data);
       }
-      
-      // Also fetch barangay ID for department creation
-      const barangaysResponse = await barangayAPI.getAll();
-      if (barangaysResponse.data && barangaysResponse.data.length > 0) {
-        setBarangayId(barangaysResponse.data[0].id);
+
+      if (barangayResponse.data?.data) {
+        setBarangaySettings(barangayResponse.data.data);
+      }
+
+      if (barangaysResponse.data?.data?.length > 0) {
+        setBarangayId(barangaysResponse.data.data[0].id);
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
@@ -113,15 +133,10 @@ function Settings() {
     setSuccess('');
     
     try {
-      // In production, this would call an API endpoint
-      // await systemAPI.updateSettings(systemSettings);
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+      await systemAPI.updateSettings(systemSettings);
       setSuccess('System settings saved successfully!');
     } catch (err) {
-      setError('Failed to save system settings');
+      setError(err.response?.data?.message || 'Failed to save system settings');
     } finally {
       setLoading(false);
     }
@@ -136,7 +151,7 @@ function Settings() {
       await barangayAPI.updateSettings(barangaySettings);
       setSuccess('Barangay information saved successfully!');
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save barangay information');
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to save barangay information');
     } finally {
       setLoading(false);
     }
@@ -236,11 +251,11 @@ function Settings() {
                 <button
                   onClick={() => navigate(item.path)}
                   className={`w-full flex items-center ${sidebarOpen ? 'space-x-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-all duration-200 focus:outline-none ${
-                    location.pathname === item.path
+                    isMenuItemActive(item.path)
                       ? 'text-white shadow-lg' 
                       : 'text-black hover:bg-[#C4B4AE]'
                   }`}
-                  style={location.pathname === item.path ? { backgroundColor: '#B8A09A' } : {}}
+                  style={isMenuItemActive(item.path) ? { backgroundColor: '#B8A09A' } : {}}
                 >
                   <item.icon size={20} />
                   {sidebarOpen && <span className="text-sm font-medium">{item.label}</span>}
@@ -292,7 +307,7 @@ function Settings() {
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => navigate(`/settings/${tab.id}`)}
                   className={`flex items-center space-x-2 px-6 py-3 font-medium transition-all ${
                     activeTab === tab.id
                       ? 'text-blue-600 border-b-2 border-blue-600'

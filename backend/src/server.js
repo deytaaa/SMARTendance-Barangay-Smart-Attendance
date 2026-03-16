@@ -1,8 +1,10 @@
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const morgan = require('morgan');
 const config = require('./config/config');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
+const { initSocket } = require('./socket');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -11,6 +13,7 @@ const attendanceRoutes = require('./routes/attendanceRoutes');
 const barangayRoutes = require('./routes/barangayRoutes');
 const departmentRoutes = require('./routes/departmentRoutes');
 const qrRoutes = require('./routes/qrRoutes');
+const systemSettingsRoutes = require('./routes/systemSettingsRoutes');
 
 // Initialize express app
 const app = express();
@@ -41,6 +44,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/barangays', barangayRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/qr', qrRoutes);
+app.use('/api/system-settings', systemSettingsRoutes);
 
 // Error handling
 app.use(notFound);
@@ -48,8 +52,11 @@ app.use(errorHandler);
 
 // Start server
 const PORT = config.port;
+const server = http.createServer(app);
 
-app.listen(PORT, () => {
+initSocket(server, config.cors.origin);
+
+server.listen(PORT, () => {
   console.log('');
   console.log('┌─────────────────────────────────────────┐');
   console.log('│   🚀 SMARTendance API Server Running   │');
@@ -66,6 +73,7 @@ app.listen(PORT, () => {
   console.log('   - Attendance: /api/attendance/*');
   console.log('   - Barangays: /api/barangays/*');
   console.log('   - Departments: /api/departments/*');
+  console.log('   - System Settings: /api/system-settings/*');
   console.log('');
 });
 

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { authAPI } from '../services/api';
+import { authAPI, departmentAPI } from '../services/api';
 import { 
   Users, 
   UserPlus, 
@@ -26,8 +26,11 @@ const Register = () => {
     middleName: '',
     lastName: '',
     email: '',
-    contactNumber: ''
+    contactNumber: '',
+    departmentId: '',
+    role: 'STAFF'
   });
+  const [departments, setDepartments] = useState([]);
   const [generatedPassword, setGeneratedPassword] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -41,7 +44,7 @@ const Register = () => {
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: UserPlus, label: 'Register Employee', path: '/register' },
+    { icon: UserPlus, label: 'Enroll Employee', path: '/register' },
     { icon: Users, label: 'User Management', path: '/users' },
     { icon: ClipboardCheck, label: 'Attendance', path: '/attendance' },
     { icon: QrCode, label: 'QR Card Manager', path: '/qr-manager' },
@@ -56,6 +59,19 @@ const Register = () => {
       }
     };
   }, [stream]);
+
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        const response = await departmentAPI.getAll();
+        setDepartments(response.data.data || []);
+      } catch (err) {
+        console.error('Error fetching departments:', err);
+      }
+    };
+
+    fetchDepartments();
+  }, []);
 
   // Handle camera stream when captureMode changes
   useEffect(() => {
@@ -174,7 +190,9 @@ const Register = () => {
         middleName: '',
         lastName: '',
         email: '',
-        contactNumber: ''
+        contactNumber: '',
+        departmentId: '',
+        role: 'STAFF'
       });
       setImageFile(null);
       setImagePreview(null);
@@ -249,7 +267,7 @@ const Register = () => {
       <main className="flex-1 overflow-y-auto">
         <header className="bg-white shadow-sm border-b border-gray-200">
           <div className="px-8 py-6">
-            <h1 className="text-2xl font-bold text-gray-800">Register New Employee</h1>
+            <h1 className="text-2xl font-bold text-gray-800">Enroll New Employee</h1>
             <p className="text-sm text-gray-500 mt-1">Add a new employee to the attendance system</p>
           </div>
         </header>
@@ -261,6 +279,7 @@ const Register = () => {
             <div className="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded-lg">
               <p className="font-semibold">✅ Employee registered successfully!</p>
               <p className="text-sm mt-1">Employee profile with picture has been created and can now be tracked in the attendance system.</p>
+              <p className="text-sm mt-1">Temporary password generated: <span className="font-semibold">{generatedPassword}</span></p>
             </div>
           )}
 
@@ -457,12 +476,50 @@ const Register = () => {
                   required
                 />
               </div>
+
+              {/* Role */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Role <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="role"
+                  value={formData.role}
+                  onChange={handleChange}
+                  className="input-field"
+                  required
+                >
+                  <option value="STAFF">STAFF</option>
+                  <option value="OFFICIAL">OFFICIAL</option>
+                  <option value="VOLUNTEER">VOLUNTEER</option>
+                </select>
+              </div>
+
+              {/* Department */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Department
+                </label>
+                <select
+                  name="departmentId"
+                  value={formData.departmentId}
+                  onChange={handleChange}
+                  className="input-field"
+                >
+                  <option value="">Select Department (Optional)</option>
+                  {departments.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* Info Box */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <p className="text-sm text-blue-800">
-                <strong>🎯 Next Step:</strong> After registration, scan this employee's QR card using the QR Scanner for attendance tracking.
+                <strong>Admin onboarding:</strong> Enroll employee details here, then generate the employee QR card in QR Card Manager for attendance scanning.
               </p>
             </div>
 
@@ -473,7 +530,7 @@ const Register = () => {
                 className="btn-primary flex-1"
                 disabled={loading}
               >
-                {loading ? 'Registering...' : 'Register Employee'}
+                {loading ? 'Enrolling...' : 'Enroll Employee'}
               </button>
               <button 
                 type="button" 

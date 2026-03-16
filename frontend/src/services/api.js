@@ -28,7 +28,10 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const requestUrl = error.config?.url || '';
+    const isLoginRequest = requestUrl.includes('/auth/login');
+
+    if (error.response?.status === 401 && !isLoginRequest) {
       // Unauthorized - clear token and redirect to login
       localStorage.removeItem('token');
       window.location.href = '/login';
@@ -84,11 +87,17 @@ export const departmentAPI = {
   delete: (id) => api.delete(`/departments/${id}`),
 };
 
+export const systemAPI = {
+  getSettings: () => api.get('/system-settings'),
+  updateSettings: (data) => api.put('/system-settings', data),
+};
+
 // QR Card API
 export const qrAPI = {
   getAll: () => api.get('/qr'),
   getById: (userId) => api.get(`/qr/${userId}`),
   generate: () => api.post('/qr/generate'),
+  generateOne: (userId) => api.post(`/qr/generate/${userId}`),
   download: (userId) => {
     return api.get(`/qr/download/${userId}`, {
       responseType: 'blob',

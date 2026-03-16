@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { 
   Users, 
   CheckCircle, 
@@ -17,10 +17,13 @@ import {
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { userAPI, attendanceAPI } from '../services/api';
+import { disconnectSocket, getSocket } from '../services/socket';
 
 function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { viewMode: routeViewMode } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -29,29 +32,67 @@ function Dashboard() {
     absent: 0
   });
   const [attendanceData, setAttendanceData] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [viewMode, setViewMode] = useState('today'); // 'today' or 'date'
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const todayDate = new Date().toISOString().split('T')[0];
+  const dateParam = searchParams.get('date');
+  const isValidDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '') && !Number.isNaN(new Date(`${value}T00:00:00`).getTime());
+  const resolvedSelectedDate = isValidDate(dateParam) ? dateParam : todayDate;
+  const [selectedDate, setSelectedDate] = useState(resolvedSelectedDate);
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const viewMode = routeViewMode === 'date' ? 'date' : 'today';
+
+  useEffect(() => {
+    if (routeViewMode !== 'today' && routeViewMode !== 'date') {
+      navigate('/dashboard/today', { replace: true });
+    }
+  }, [navigate, routeViewMode]);
+
+  useEffect(() => {
+    setSelectedDate(resolvedSelectedDate);
+  }, [resolvedSelectedDate]);
+
+  useEffect(() => {
+    if (viewMode !== 'date') {
+      if (dateParam) {
+        setSearchParams({}, { replace: true });
+      }
+      return;
+    }
+
+    if (dateParam !== selectedDate) {
+      setSearchParams({ date: selectedDate }, { replace: true });
+    }
+  }, [dateParam, selectedDate, setSearchParams, viewMode]);
 
   useEffect(() => {
     fetchDashboardData();
   }, [selectedDate, viewMode]);
 
-  // Auto-refresh interval - refreshes every 5 seconds when enabled
   useEffect(() => {
-    if (!autoRefresh) return;
+    const socket = getSocket();
 
-    const interval = setInterval(() => {
-      fetchDashboardData();
-    }, 5000); // Refresh every 5 seconds
+    const handleConnect = () => setIsLiveConnected(true);
+    const handleDisconnect = () => setIsLiveConnected(false);
+    const handleAttendanceUpdated = () => fetchDashboardData(false);
 
-    return () => clearInterval(interval);
-  }, [autoRefresh, viewMode, selectedDate]);
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('attendance:updated', handleAttendanceUpdated);
 
-  const fetchDashboardData = async () => {
+    setIsLiveConnected(socket.connected);
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('attendance:updated', handleAttendanceUpdated);
+    };
+  }, [viewMode, selectedDate]);
+
+  const fetchDashboardData = async (showLoader = true) => {
     try {
-      setLoading(true);
+      if (showLoader) {
+        setLoading(true);
+      }
       
       // Fetch all users (excluding admins)
       const usersResponse = await userAPI.getAll({ limit: 1000 });
@@ -87,7 +128,9 @@ function Dashboard() {
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
     } finally {
-      setLoading(false);
+      if (showLoader) {
+        setLoading(false);
+      }
     }
   };
 
@@ -119,15 +162,20 @@ function Dashboard() {
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: UserPlus, label: 'Register Employee', path: '/register' },
+    { icon: UserPlus, label: 'Enroll Employee', path: '/register' },
     { icon: Users, label: 'User Management', path: '/users' },
     { icon: ClipboardCheck, label: 'Attendance', path: '/attendance' },
     { icon: QrCode, label: 'QR Card Manager', path: '/qr-manager' },
     { icon: Settings, label: 'Settings', path: '/settings' },
   ];
 
+  const isMenuItemActive = (path) => {
+    return location.pathname === path || location.pathname.startsWith(`${path}/`);
+  };
+
   const handleLogout = () => {
     // Clear auth token and redirect
+    disconnectSocket();
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     navigate('/login');
@@ -170,11 +218,11 @@ function Dashboard() {
                 <button
                   onClick={() => navigate(item.path)}
                   className={`w-full flex items-center ${sidebarOpen ? 'space-x-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-all duration-200 focus:outline-none ${
-                    location.pathname === item.path
+                    isMenuItemActive(item.path)
                       ? 'text-white shadow-lg' 
                       : 'text-black hover:bg-[#C4B4AE]'
                   }`}
-                  style={location.pathname === item.path ? { backgroundColor: '#B8A09A' } : {}}
+                  style={isMenuItemActive(item.path) ? { backgroundColor: '#B8A09A' } : {}}
                 >
                   <item.icon size={20} />
                   {sidebarOpen && <span className="text-sm font-medium">{item.label}</span>}
@@ -224,7 +272,7 @@ function Dashboard() {
                     {/* View Mode Toggle */}
                     <div className="flex bg-gray-100 rounded-lg p-1">
                       <button
-                        onClick={() => setViewMode('today')}
+                        onClick={() => navigate('/dashboard/today')}
                         className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                           viewMode === 'today' 
                             ? 'bg-blue-600 text-white shadow-sm' 
@@ -234,7 +282,7 @@ function Dashboard() {
                         Today
                       </button>
                       <button
-                        onClick={() => setViewMode('date')}
+                        onClick={() => navigate(`/dashboard/date?date=${selectedDate}`)}
                         className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                           viewMode === 'date' 
                             ? 'bg-blue-600 text-white shadow-sm' 
@@ -248,33 +296,21 @@ function Dashboard() {
 
                   {/* Date Display/Picker */}
                   <div className="flex items-center gap-4">
-                    {/* Auto-refresh controls */}
+                    {/* Live update controls */}
                     <div className="flex items-center gap-3 border-l border-gray-300 pl-4">
                       <button
-                        onClick={() => fetchDashboardData()}
+                        onClick={() => fetchDashboardData(true)}
                         disabled={loading}
                         className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
                         title="Refresh now"
                       >
                         <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
                       </button>
-                      
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={autoRefresh}
-                          onChange={(e) => setAutoRefresh(e.target.checked)}
-                          className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700 font-medium">Auto-refresh</span>
-                      </label>
-                      
-                      {autoRefresh && (
-                        <div className="flex items-center gap-1 text-xs text-green-600">
-                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                          <span>Live</span>
-                        </div>
-                      )}
+
+                      <div className={`flex items-center gap-1 text-xs ${isLiveConnected ? 'text-green-600' : 'text-gray-500'}`}>
+                        <div className={`w-2 h-2 rounded-full ${isLiveConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                        <span>{isLiveConnected ? 'Live updates' : 'Reconnecting...'}</span>
+                      </div>
                     </div>
 
                     {/* Date picker */}

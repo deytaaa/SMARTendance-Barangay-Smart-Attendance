@@ -163,7 +163,7 @@ exports.getSettings = async (req, res, next) => {
         address: barangay.location || '',
         contactNumber: barangay.contact || '',
         email: barangay.description || '',
-        captain: '',
+        captain: barangay.captain || '',
       },
     });
   } catch (error) {
@@ -194,6 +194,7 @@ exports.updateSettings = async (req, res, next) => {
         ...(name && { name }),
         ...(address && { location: address }),
         ...(contactNumber && { contact: contactNumber }),
+        ...(captain !== undefined && { captain }),
         ...(email && { description: email }),
       },
     });

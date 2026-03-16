@@ -25,6 +25,7 @@ function QRManager() {
   const [qrCards, setQrCards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [generatingCardId, setGeneratingCardId] = useState(null);
   const [selectedCard, setSelectedCard] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [stats, setStats] = useState({
@@ -70,6 +71,20 @@ function QRManager() {
       alert('❌ Failed to generate QR cards. Please try again.');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const generateSingleCard = async (userId) => {
+    try {
+      setGeneratingCardId(userId);
+      await qrAPI.generateOne(userId);
+      await fetchQRCards();
+      alert('✅ QR card generated successfully!');
+    } catch (error) {
+      console.error('Error generating QR card:', error);
+      alert('❌ Failed to generate QR card. Please try again.');
+    } finally {
+      setGeneratingCardId(null);
     }
   };
 
@@ -119,9 +134,19 @@ function QRManager() {
     setShowModal(false);
   };
 
+  const getInitials = (name = '') => {
+    return name
+      .split(' ')
+      .filter(Boolean)
+      .map(part => part[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  };
+
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: UserPlus, label: 'Register Employee', path: '/register' },
+    { icon: UserPlus, label: 'Enroll Employee', path: '/register' },
     { icon: Users, label: 'User Management', path: '/users' },
     { icon: ClipboardCheck, label: 'Attendance', path: '/attendance' },
     { icon: QrCode, label: 'QR Card Manager', path: '/qr-manager' },
@@ -279,7 +304,7 @@ function QRManager() {
                     <div className="text-center py-12 text-gray-500">
                       <QrCode size={64} className="mx-auto mb-4 text-gray-300" />
                       <p className="text-lg font-medium">No employees found</p>
-                      <p>Register employees to generate QR cards</p>
+                      <p>Enroll employees to generate QR cards</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -315,12 +340,16 @@ function QRManager() {
                               </>
                             ) : (
                               <button
-                                onClick={generateAllCards}
-                                disabled={generating}
+                                onClick={() => generateSingleCard(card.userId)}
+                                disabled={generating || generatingCardId === card.userId}
                                 className="w-full bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-400 text-white px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-1"
                               >
-                                <QrCode size={16} />
-                                <span>Generate Card</span>
+                                {generatingCardId === card.userId ? (
+                                  <RefreshCw className="animate-spin" size={16} />
+                                ) : (
+                                  <QrCode size={16} />
+                                )}
+                                <span>{generatingCardId === card.userId ? 'Generating...' : 'Generate Card'}</span>
                               </button>
                             )}
                           </div>
@@ -337,43 +366,50 @@ function QRManager() {
 
       {/* QR Card Preview Modal */}
       {showModal && selectedCard && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">QR Card Preview</h3>
-                <button
-                  onClick={closeModal}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <X size={24} />
-                </button>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backdropFilter: 'blur(6px)', background: 'rgba(16, 24, 40, 0.55)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
+        >
+          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-5 flex items-center justify-between" style={{ background: 'linear-gradient(135deg,#1f2937 0%,#374151 100%)' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-white/15 ring-2 ring-white/25 flex items-center justify-center overflow-hidden">
+                  {selectedCard.profileImage ? (
+                    <img src={selectedCard.profileImage} alt={selectedCard.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-white font-bold text-sm">{getInitials(selectedCard.name)}</span>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-white text-lg font-semibold leading-tight">QR Card Preview</h3>
+                  <p className="text-white/75 text-xs">{selectedCard.name}</p>
+                </div>
               </div>
-              
-              <div className="text-center">
+              <button
+                onClick={closeModal}
+                className="text-white/70 hover:text-white hover:bg-white/10 rounded-lg p-1.5 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6">
+              <div className="bg-gray-50 rounded-xl border border-gray-200 p-3">
                 <img
                   src={selectedCard.imageUrl}
                   alt={`QR Card for ${selectedCard.name}`}
-                  className="mx-auto mb-4 border border-gray-200 rounded-lg shadow-sm"
+                  className="w-full border border-gray-200 rounded-lg shadow-sm"
                 />
-                
-                <div className="text-sm text-gray-600 space-y-1">
-                  <p><span className="font-medium">Name:</span> {selectedCard.name}</p>
-                  <p><span className="font-medium">Role:</span> {selectedCard.role}</p>
-                  <p><span className="font-medium">Department:</span> {selectedCard.department}</p>
-                  <p><span className="font-medium">Employee ID:</span> {selectedCard.userId}</p>
-                </div>
-
-                <div className="flex space-x-2 mt-4">
-                  <button
-                    onClick={() => downloadCard(selectedCard.userId, selectedCard.name)}
-                    className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md font-medium transition-colors flex items-center justify-center space-x-2"
-                  >
-                    <Download size={16} />
-                    <span>Download</span>
-                  </button>
-                </div>
               </div>
+
+              <button
+                onClick={() => downloadCard(selectedCard.userId, selectedCard.name)}
+                className="w-full mt-4 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
+              >
+                <Download size={16} />
+                <span>Download QR Card</span>
+              </button>
             </div>
           </div>
         </div>

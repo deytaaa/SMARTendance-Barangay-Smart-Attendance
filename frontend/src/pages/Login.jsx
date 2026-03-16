@@ -40,7 +40,13 @@ const Login = () => {
       
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed. Please check your credentials.');
+      const status = err.response?.status;
+      const serverMessage = err.response?.data?.message || err.response?.data?.error;
+      const fallbackMessage = status === 403
+        ? 'Only admin accounts can log in to the system.'
+        : 'Login failed. Please check your credentials.';
+
+      setError(serverMessage || fallbackMessage);
       setLoading(false);
     }
   };

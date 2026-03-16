@@ -110,13 +110,22 @@ exports.login = async (req, res, next) => {
       });
     }
 
+    // Only admins can access the web dashboard
+    // Do this before password validation so non-admin users always get a clear message.
+    if (user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admin accounts can log in to the system',
+      });
+    }
+
     // Check password
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials',
+        message: 'Invalid password',
       });
     }
 

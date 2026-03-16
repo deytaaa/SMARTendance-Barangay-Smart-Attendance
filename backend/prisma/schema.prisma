@@ -63,6 +63,7 @@ model Barangay {
   name        String       @unique
   location    String?
   contact     String?
+  captain     String?
   description String?
   
   users       User[]
@@ -71,6 +72,18 @@ model Barangay {
   
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+}
+
+model SystemSettings {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique @default("default")
+  cutoffTime  String   @default("09:00")
+  gracePeriod Int      @default(15)
+  workingDays String[] @default(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"])
+  shiftStart  String   @default("08:00")
+  shiftEnd    String   @default("17:00")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // Department model
