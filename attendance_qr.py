@@ -6,6 +6,7 @@ from datetime import datetime
 from pyzbar import pyzbar
 import json
 import numpy as np
+import winsound
 
 # Configuration
 API_URL = "http://localhost:5000/api"  # Update with your backend URL
@@ -348,6 +349,8 @@ def main():
                     try:
                         if record_attendance(user_id):
                             last_scan_time[user_id] = current_time
+                            # Play a buzzer-like beep after successful scan (Windows only)
+                            winsound.Beep(1000, 200)  # 1000 Hz for 200 ms
                             # Draw green rectangle around QR code
                             points = qr_code.polygon
                             if len(points) == 4:
