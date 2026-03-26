@@ -109,21 +109,12 @@ npm run dev
 
 Frontend will run on `http://localhost:5173`
 
-### Hardware Setup (Face Recognition Device)
+### Hardware Setup (QR Scanner)
 
-**⚠️ Hardware Platform Change:**  
-Due to Raspberry Pi 5 hardware issues, this project now uses a **second laptop with USB webcam** for face recognition instead of Raspberry Pi.
-
-For complete hardware setup instructions, see:
-- **[LAPTOP_SETUP.md](./LAPTOP_SETUP.md)** - Setup guide for laptop-based face recognition
-
-**Quick Start:**
-1. Install Python 3.9+ on second laptop
-2. Install dependencies: `pip install opencv-python face-recognition requests numpy`
+1. Install Python 3.9+ on your laptop
+2. Install dependencies: `pip install opencv-python pyzbar requests numpy`
 3. Connect USB webcam
-4. Run: `python attendance.py`
-
-See [LAPTOP_SETUP.md](./LAPTOP_SETUP.md) for detailed instructions.
+4. Run: `python attendance_qr.py`
 
 ## 👤 Default User Accounts
 
