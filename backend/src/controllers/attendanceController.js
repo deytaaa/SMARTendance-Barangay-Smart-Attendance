@@ -254,7 +254,13 @@ exports.getAllAttendance = async (req, res, next) => {
     if (status) where.status = status;
     if (departmentId) where.user = { departmentId: parseInt(departmentId) };
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Validate and set default values for pagination
+    let pageNum = parseInt(page);
+    let limitNum = parseInt(limit);
+    if (isNaN(pageNum) || pageNum < 1) pageNum = 1;
+    if (isNaN(limitNum) || limitNum < 1) limitNum = 10;
+    const skip = (pageNum - 1) * limitNum;
 
     const [attendance, total] = await Promise.all([
       prisma.attendance.findMany({
@@ -278,7 +284,7 @@ exports.getAllAttendance = async (req, res, next) => {
           },
         },
         skip,
-        take: parseInt(limit),
+        take: limitNum,
         orderBy: { date: 'desc' },
       }),
       prisma.attendance.count({ where }),
@@ -288,8 +294,8 @@ exports.getAllAttendance = async (req, res, next) => {
       success: true,
       count: attendance.length,
       total,
-      page: parseInt(page),
-      pages: Math.ceil(total / parseInt(limit)),
+      page: pageNum,
+      pages: Math.ceil(total / limitNum),
       data: attendance,
     });
   } catch (error) {
