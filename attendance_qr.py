@@ -287,7 +287,7 @@ def main():
     print("=" * 50)
     
     last_scan_time = {}
-    SCAN_COOLDOWN = 5  # 5 seconds between same QR scans to prevent accidental double scans
+    SCAN_COOLDOWN = 10  # 10 seconds between same QR scans to prevent accidental double scans
     
     frame_error_count = 0
     MAX_FRAME_ERRORS = 10
