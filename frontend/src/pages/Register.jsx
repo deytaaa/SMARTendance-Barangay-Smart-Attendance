@@ -279,7 +279,6 @@ const Register = () => {
             <div className="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded-lg">
               <p className="font-semibold">✅ Employee registered successfully!</p>
               <p className="text-sm mt-1">Employee profile with picture has been created and can now be tracked in the attendance system.</p>
-              <p className="text-sm mt-1">Temporary password generated: <span className="font-semibold">{generatedPassword}</span></p>
             </div>
           )}
 
