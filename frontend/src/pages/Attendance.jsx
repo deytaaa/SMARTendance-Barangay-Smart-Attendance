@@ -36,6 +36,11 @@ function Attendance() {
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const viewMode = routeViewMode === 'date' ? 'date' : 'today';
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
 
   useEffect(() => {
     if (routeViewMode !== 'today' && routeViewMode !== 'date') {
@@ -67,12 +72,16 @@ function Attendance() {
   }, []);
 
   useEffect(() => {
-    if (viewMode === 'today') {
-      fetchTodayAttendance();
-    } else {
-      fetchAttendanceByDate();
-    }
+    setCurrentPage(1); // Reset to first page when date or view changes
   }, [selectedDate, viewMode]);
+
+  useEffect(() => {
+    if (viewMode === 'today') {
+      fetchTodayAttendance(currentPage);
+    } else {
+      fetchAttendanceByDate(currentPage);
+    }
+  }, [selectedDate, viewMode, currentPage, pageSize]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -100,40 +109,42 @@ function Attendance() {
     };
   }, [viewMode, selectedDate]);
 
-  const fetchTodayAttendance = async (showLoader = true) => {
+
+  const fetchTodayAttendance = async (page = 1, showLoader = true) => {
     try {
-      if (showLoader) {
-        setLoading(true);
-      }
-      const response = await attendanceAPI.getToday();
+      if (showLoader) setLoading(true);
+      const response = await attendanceAPI.getAll({
+        date: todayDate,
+        page,
+        limit: pageSize
+      });
       setAttendance(response.data.data || []);
+      setTotalPages(response.data.pages || 1);
+      setTotalRecords(response.data.total || 0);
       setLastRefresh(new Date());
     } catch (error) {
       console.error('Error fetching attendance:', error);
     } finally {
-      if (showLoader) {
-        setLoading(false);
-      }
+      if (showLoader) setLoading(false);
     }
   };
 
-  const fetchAttendanceByDate = async (showLoader = true) => {
+  const fetchAttendanceByDate = async (page = 1, showLoader = true) => {
     try {
-      if (showLoader) {
-        setLoading(true);
-      }
-      const response = await attendanceAPI.getAll({ 
+      if (showLoader) setLoading(true);
+      const response = await attendanceAPI.getAll({
         date: selectedDate,
-        limit: 100 // Get more records for historical view
+        page,
+        limit: pageSize
       });
       setAttendance(response.data.data || []);
+      setTotalPages(response.data.pages || 1);
+      setTotalRecords(response.data.total || 0);
       setLastRefresh(new Date());
     } catch (error) {
       console.error('Error fetching attendance:', error);
     } finally {
-      if (showLoader) {
-        setLoading(false);
-      }
+      if (showLoader) setLoading(false);
     }
   };
 
@@ -355,7 +366,7 @@ function Attendance() {
                 )}
                 
                 <div className="text-sm text-gray-500">
-                  <div>{attendance.length} record{attendance.length !== 1 ? 's' : ''} found</div>
+                  <div>{totalRecords} record{totalRecords !== 1 ? 's' : ''} found</div>
                   <div className="text-xs mt-1">
                     Last updated: {lastRefresh.toLocaleTimeString()}
                   </div>
@@ -371,60 +382,103 @@ function Attendance() {
             ) : filteredAttendance.length === 0 ? (
               <div className="text-center py-12 text-gray-500">No attendance records found</div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee Name</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Department</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Role</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Check In</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Check Out</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredAttendance.map((record) => (
-                      <tr key={record.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-3 px-4">
-                          <div className="font-medium text-gray-900">
-                            {record.user?.firstName} {record.user?.lastName}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          {record.user?.department?.name ? (
-                            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
-                              {record.user.department.name}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="text-sm text-gray-600">{record.user?.role}</span>
-                        </td>
-                        <td className="py-3 px-4 text-gray-700">
-                          {record.checkInTime ? formatTime(record.checkInTime) : '-'}
-                        </td>
-                        <td className="py-3 px-4 text-gray-700">
-                          {record.checkOutTime ? formatTime(record.checkOutTime) : '-'}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            record.status === 'ON_TIME' 
-                              ? 'bg-green-100 text-green-700' 
-                              : record.status === 'LATE'
-                              ? 'bg-yellow-100 text-yellow-700'
-                              : 'bg-red-100 text-red-700'
-                          }`}>
-                            {record.status}
-                          </span>
-                        </td>
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee Name</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-700">Department</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-700">Role</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-700">Check In</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-700">Check Out</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {filteredAttendance.map((record) => (
+                        <tr key={record.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="py-3 px-4">
+                            <div className="font-medium text-gray-900">
+                              {record.user?.firstName} {record.user?.lastName}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            {record.user?.department?.name ? (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                                {record.user.department.name}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="text-sm text-gray-600">{record.user?.role}</span>
+                          </td>
+                          <td className="py-3 px-4 text-gray-700">
+                            {record.checkInTime ? formatTime(record.checkInTime) : '-'}
+                          </td>
+                          <td className="py-3 px-4 text-gray-700">
+                            {record.checkOutTime ? formatTime(record.checkOutTime) : '-'}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                              record.status === 'ON_TIME' 
+                                ? 'bg-green-100 text-green-700' 
+                                : record.status === 'LATE'
+                                ? 'bg-yellow-100 text-yellow-700'
+                                : 'bg-red-100 text-red-700'
+                            }`}>
+                              {record.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Pagination Controls */}
+                <div className="flex justify-between items-center mt-4">
+                  <div className="text-xs text-gray-500">
+                    Page {currentPage} of {totalPages}
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      className="px-2 py-1 rounded border border-gray-300 text-xs"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                    >First</button>
+                    <button
+                      className="px-2 py-1 rounded border border-gray-300 text-xs"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >Prev</button>
+                    <span className="px-2 py-1 text-xs border border-gray-300 rounded bg-white">{currentPage}</span>
+                    <button
+                      className="px-2 py-1 rounded border border-gray-300 text-xs"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                    >Next</button>
+                    <button
+                      className="px-2 py-1 rounded border border-gray-300 text-xs"
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                    >Last</button>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span>Rows:</span>
+                    <select
+                      value={pageSize}
+                      onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                      className="border border-gray-300 rounded px-1 py-0.5"
+                    >
+                      {[5, 10, 20, 50, 100].map(size => (
+                        <option key={size} value={size}>{size}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </div>
