@@ -10,7 +10,8 @@ module.exports = {
   },
   
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    // Support comma-separated list of origins
+    origin: (process.env.FRONTEND_URL || 'http://localhost:5173').split(',').map(origin => origin.trim()),
   },
   
   iot: {
