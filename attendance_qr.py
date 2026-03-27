@@ -9,7 +9,7 @@ import numpy as np
 import winsound
 
 # Configuration
-API_URL = "http://localhost:5000/api"  # Update with your backend URL
+API_URL = "https://smartendance-barangay-smart-attendance-production.up.railway.app/api"  # Update with your backend URL
 PREFERRED_CAMERA = 1  # Set to 0 for built-in, 1 for external USB camera, etc.
 
 # Global variable to store auth token
