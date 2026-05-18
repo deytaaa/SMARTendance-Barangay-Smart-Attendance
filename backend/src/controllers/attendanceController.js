@@ -240,11 +240,21 @@ exports.checkOut = async (req, res, next) => {
 // @access  Private/Admin/Staff
 exports.getAllAttendance = async (req, res, next) => {
   try {
-    const { date, userId, status, departmentId, page = 1, limit = 20 } = req.query;
+    const { date, startDate, endDate, userId, status, departmentId, page = 1, limit = 20 } = req.query;
 
     const where = {};
 
-    if (date) {
+    // Handle date range filtering
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      where.date = {
+        gte: start,
+        lte: end
+      };
+    } else if (date) {
       const targetDate = new Date(date);
       targetDate.setHours(0, 0, 0, 0);
       where.date = targetDate;

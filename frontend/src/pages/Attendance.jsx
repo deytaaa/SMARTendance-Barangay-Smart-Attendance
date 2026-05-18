@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { attendanceAPI, departmentAPI } from '../services/api';
 import { disconnectSocket, getSocket } from '../services/socket';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { 
   Users, 
   UserPlus, 
@@ -14,6 +16,7 @@ import {
   Search,
   Calendar,
   QrCode,
+  Download,
   RefreshCw
 } from 'lucide-react';
 
@@ -30,12 +33,17 @@ function Attendance() {
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const todayDate = new Date().toISOString().split('T')[0];
   const dateParam = searchParams.get('date');
+  const startDateParam = searchParams.get('startDate');
+  const endDateParam = searchParams.get('endDate');
   const isValidDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '') && !Number.isNaN(new Date(`${value}T00:00:00`).getTime());
   const resolvedSelectedDate = isValidDate(dateParam) ? dateParam : todayDate;
   const [selectedDate, setSelectedDate] = useState(resolvedSelectedDate);
+  const [startDate, setStartDate] = useState(isValidDate(startDateParam) ? startDateParam : todayDate);
+  const [endDate, setEndDate] = useState(isValidDate(endDateParam) ? endDateParam : todayDate);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
-  const viewMode = routeViewMode === 'date' ? 'date' : 'today';
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const viewMode = routeViewMode === 'date' ? 'date' : (routeViewMode === 'date-range' ? 'dateRange' : 'today');
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -43,7 +51,7 @@ function Attendance() {
   const [totalRecords, setTotalRecords] = useState(0);
 
   useEffect(() => {
-    if (routeViewMode !== 'today' && routeViewMode !== 'date') {
+    if (routeViewMode !== 'today' && routeViewMode !== 'date' && routeViewMode !== 'date-range') {
       navigate('/attendance/today', { replace: true });
     }
   }, [navigate, routeViewMode]);
@@ -53,17 +61,19 @@ function Attendance() {
   }, [resolvedSelectedDate]);
 
   useEffect(() => {
-    if (viewMode !== 'date') {
-      if (dateParam) {
+    if (viewMode !== 'date' && viewMode !== 'dateRange') {
+      if (dateParam || startDateParam || endDateParam) {
         setSearchParams({}, { replace: true });
       }
       return;
     }
 
-    if (dateParam !== selectedDate) {
+    if (viewMode === 'date' && dateParam !== selectedDate) {
       setSearchParams({ date: selectedDate }, { replace: true });
+    } else if (viewMode === 'dateRange' && (startDateParam !== startDate || endDateParam !== endDate)) {
+      setSearchParams({ startDate, endDate }, { replace: true });
     }
-  }, [dateParam, selectedDate, setSearchParams, viewMode]);
+  }, [dateParam, startDateParam, endDateParam, selectedDate, startDate, endDate, setSearchParams, viewMode]);
 
   useEffect(() => {
     departmentAPI.getAll()
@@ -73,15 +83,17 @@ function Attendance() {
 
   useEffect(() => {
     setCurrentPage(1); // Reset to first page when date or view changes
-  }, [selectedDate, viewMode]);
+  }, [selectedDate, startDate, endDate, viewMode]);
 
   useEffect(() => {
     if (viewMode === 'today') {
       fetchTodayAttendance(currentPage);
-    } else {
+    } else if (viewMode === 'date') {
       fetchAttendanceByDate(currentPage);
+    } else if (viewMode === 'dateRange') {
+      fetchAttendanceByDateRange(currentPage);
     }
-  }, [selectedDate, viewMode, currentPage, pageSize]);
+  }, [selectedDate, viewMode, currentPage, pageSize, startDate, endDate]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -91,8 +103,10 @@ function Attendance() {
     const handleAttendanceUpdated = () => {
       if (viewMode === 'today') {
         fetchTodayAttendance(false);
-      } else {
+      } else if (viewMode === 'date') {
         fetchAttendanceByDate(false);
+      } else if (viewMode === 'dateRange') {
+        fetchAttendanceByDateRange(false);
       }
     };
 
@@ -148,11 +162,33 @@ function Attendance() {
     }
   };
 
+  const fetchAttendanceByDateRange = async (page = 1, showLoader = true) => {
+    try {
+      if (showLoader) setLoading(true);
+      const response = await attendanceAPI.getAll({
+        startDate,
+        endDate,
+        page,
+        limit: pageSize
+      });
+      setAttendance(response.data.data || []);
+      setTotalPages(response.data.pages || 1);
+      setTotalRecords(response.data.total || 0);
+      setLastRefresh(new Date());
+    } catch (error) {
+      console.error('Error fetching attendance:', error);
+    } finally {
+      if (showLoader) setLoading(false);
+    }
+  };
+
   const handleManualRefresh = () => {
     if (viewMode === 'today') {
       fetchTodayAttendance();
-    } else {
+    } else if (viewMode === 'date') {
       fetchAttendanceByDate();
+    } else if (viewMode === 'dateRange') {
+      fetchAttendanceByDateRange();
     }
   };
 
@@ -189,6 +225,144 @@ function Attendance() {
       minute: '2-digit' 
     });
   };
+
+  const getDateLabel = () => {
+    if (viewMode === 'dateRange') {
+      return `${startDate} to ${endDate}`;
+    }
+
+    return viewMode === 'date' ? selectedDate : todayDate;
+  };
+
+  const getExportQuery = () => {
+    const query = {
+      page: 1,
+      limit: 100,
+    };
+
+    if (viewMode === 'today') {
+      query.date = todayDate;
+    } else if (viewMode === 'date') {
+      query.date = selectedDate;
+    } else {
+      query.startDate = startDate;
+      query.endDate = endDate;
+    }
+
+    if (selectedDepartment) {
+      query.departmentId = selectedDepartment;
+    }
+
+    return query;
+  };
+
+  const fetchAllAttendanceForExport = async () => {
+    const firstResponse = await attendanceAPI.getAll(getExportQuery());
+    const firstPageData = firstResponse.data.data || [];
+    const totalPagesFromApi = firstResponse.data.pages || 1;
+
+    if (totalPagesFromApi <= 1) {
+      return firstPageData;
+    }
+
+    const remainingPages = [];
+    for (let page = 2; page <= totalPagesFromApi; page += 1) {
+      remainingPages.push(
+        attendanceAPI.getAll({
+          ...getExportQuery(),
+          page,
+        })
+      );
+    }
+
+    const responses = await Promise.all(remainingPages);
+    const additionalData = responses.flatMap((response) => response.data.data || []);
+
+    return [...firstPageData, ...additionalData];
+  };
+
+  const handleExportPdf = async () => {
+    try {
+      setExportingPdf(true);
+
+      const records = await fetchAllAttendanceForExport();
+      const visibleRecords = records.filter((record) => {
+        const fullName = `${record.user?.firstName || ''} ${record.user?.lastName || ''}`.toLowerCase();
+        const nameMatch = fullName.includes(searchTerm.toLowerCase());
+        const deptMatch = !selectedDepartment || record.user?.department?.id === parseInt(selectedDepartment);
+        return nameMatch && deptMatch;
+      });
+
+      const title = viewMode === 'dateRange'
+        ? `Attendance Report (${startDate} to ${endDate})`
+        : viewMode === 'date'
+          ? `Attendance Report (${selectedDate})`
+          : `Attendance Report (${todayDate})`;
+
+      const doc = new jsPDF('landscape', 'pt', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.text(title, pageWidth / 2, 40, { align: 'center' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.text('Barangay Maharlika Attendance Monitoring System', pageWidth / 2, 58, { align: 'center' });
+      doc.text(`Date Filter: ${getDateLabel()}`, 40, 78);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 40, 92);
+
+      const tableRows = visibleRecords.map((record) => [
+        `${record.user?.firstName || ''} ${record.user?.lastName || ''}`.trim(),
+        record.user?.department?.name || '-',
+        record.user?.role || '-',
+        record.checkInTime ? formatTime(record.checkInTime) : '-',
+        record.checkOutTime ? formatTime(record.checkOutTime) : '-',
+        record.status || '-'
+      ]);
+
+      autoTable(doc, {
+        startY: 105,
+        head: [['Employee Name', 'Department', 'Role', 'Check In', 'Check Out', 'Status']],
+        body: tableRows.length > 0 ? tableRows : [['No attendance records found', '', '', '', '', '']],
+        styles: {
+          fontSize: 9,
+          cellPadding: 4,
+          valign: 'middle',
+        },
+        headStyles: {
+          fillColor: [59, 130, 246],
+          textColor: 255,
+          fontStyle: 'bold',
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252],
+        },
+        margin: { top: 105, left: 40, right: 40 },
+      });
+
+      const fileName = title.replace(/[()]/g, '').replace(/\s+/g, '_').toLowerCase() + '.pdf';
+      doc.save(fileName);
+    } catch (error) {
+      console.error('Failed to export PDF:', error);
+      alert('Failed to export PDF. Please try again.');
+    }
+    finally {
+      setExportingPdf(false);
+    }
+  };
+
+  const exportPdfButton = (
+    <button
+      onClick={handleExportPdf}
+      disabled={exportingPdf || loading || filteredAttendance.length === 0}
+      className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+      title="Export PDF"
+    >
+      <Download size={18} className={exportingPdf ? 'animate-pulse' : ''} />
+      {exportingPdf ? 'Exporting...' : 'Export PDF'}
+    </button>
+  );
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -253,9 +427,14 @@ function Attendance() {
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
         <header className="bg-white shadow-sm border-b border-gray-200">
-          <div className="px-8 py-6">
-            <h1 className="text-2xl font-bold text-gray-800">Attendance Monitoring</h1>
-            <p className="text-sm text-gray-500 mt-1">View attendance records by day with historical tracking</p>
+          <div className="px-8 py-6 flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800">Attendance Monitoring</h1>
+              <p className="text-sm text-gray-500 mt-1">View attendance records by day with historical tracking</p>
+            </div>
+            <div className="shrink-0">
+              {exportPdfButton}
+            </div>
           </div>
         </header>
 
@@ -280,7 +459,7 @@ function Attendance() {
                 <select
                   value={selectedDepartment}
                   onChange={(e) => setSelectedDepartment(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm text-gray-700 min-w-[180px]"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm text-gray-700 min-w-45"
                 >
                   <option value="">All Departments</option>
                   {departments.map(dept => (
@@ -309,6 +488,16 @@ function Attendance() {
                     }`}
                   >
                     Select Date
+                  </button>
+                  <button
+                    onClick={() => navigate(`/attendance/date-range?startDate=${startDate}&endDate=${endDate}`)}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      viewMode === 'dateRange' 
+                        ? 'bg-blue-600 text-white shadow-sm' 
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    Date Range
                   </button>
                 </div>
 
@@ -342,7 +531,7 @@ function Attendance() {
                       day: 'numeric' 
                     })}</span>
                   </div>
-                ) : (
+                ) : viewMode === 'date' ? (
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 text-gray-700 font-medium">
                       <Calendar size={20} />
@@ -361,6 +550,33 @@ function Attendance() {
                         month: 'long', 
                         day: 'numeric' 
                       })}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 text-gray-700 font-medium">
+                      <Calendar size={20} />
+                      Date Range:
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        max={endDate}
+                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                      />
+                      <span className="text-gray-600">to</span>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        min={startDate}
+                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                      />
+                    </div>
+                    <span className="text-sm text-gray-500">
+                      {new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </span>
                   </div>
                 )}

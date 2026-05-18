@@ -34,15 +34,19 @@ function Dashboard() {
   const [attendanceData, setAttendanceData] = useState([]);
   const todayDate = new Date().toISOString().split('T')[0];
   const dateParam = searchParams.get('date');
+  const startDateParam = searchParams.get('startDate');
+  const endDateParam = searchParams.get('endDate');
   const isValidDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '') && !Number.isNaN(new Date(`${value}T00:00:00`).getTime());
   const resolvedSelectedDate = isValidDate(dateParam) ? dateParam : todayDate;
   const [selectedDate, setSelectedDate] = useState(resolvedSelectedDate);
+  const [startDate, setStartDate] = useState(isValidDate(startDateParam) ? startDateParam : todayDate);
+  const [endDate, setEndDate] = useState(isValidDate(endDateParam) ? endDateParam : todayDate);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
-  const viewMode = routeViewMode === 'date' ? 'date' : 'today';
+  const viewMode = routeViewMode === 'date' ? 'date' : (routeViewMode === 'date-range' ? 'dateRange' : 'today');
 
   useEffect(() => {
-    if (routeViewMode !== 'today' && routeViewMode !== 'date') {
+    if (routeViewMode !== 'today' && routeViewMode !== 'date' && routeViewMode !== 'date-range') {
       navigate('/dashboard/today', { replace: true });
     }
   }, [navigate, routeViewMode]);
@@ -52,21 +56,23 @@ function Dashboard() {
   }, [resolvedSelectedDate]);
 
   useEffect(() => {
-    if (viewMode !== 'date') {
-      if (dateParam) {
+    if (viewMode !== 'date' && viewMode !== 'dateRange') {
+      if (dateParam || startDateParam || endDateParam) {
         setSearchParams({}, { replace: true });
       }
       return;
     }
 
-    if (dateParam !== selectedDate) {
+    if (viewMode === 'date' && dateParam !== selectedDate) {
       setSearchParams({ date: selectedDate }, { replace: true });
+    } else if (viewMode === 'dateRange' && (startDateParam !== startDate || endDateParam !== endDate)) {
+      setSearchParams({ startDate, endDate }, { replace: true });
     }
-  }, [dateParam, selectedDate, setSearchParams, viewMode]);
+  }, [dateParam, startDateParam, endDateParam, selectedDate, startDate, endDate, setSearchParams, viewMode]);
 
   useEffect(() => {
     fetchDashboardData();
-  }, [selectedDate, viewMode]);
+  }, [selectedDate, viewMode, startDate, endDate]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -103,9 +109,15 @@ function Dashboard() {
       let attendanceResponse;
       if (viewMode === 'today') {
         attendanceResponse = await attendanceAPI.getToday();
-      } else {
+      } else if (viewMode === 'date') {
         attendanceResponse = await attendanceAPI.getAll({ 
           date: selectedDate,
+          limit: 100
+        });
+      } else {
+        attendanceResponse = await attendanceAPI.getAll({ 
+          startDate,
+          endDate,
           limit: 100
         });
       }
@@ -291,6 +303,16 @@ function Dashboard() {
                       >
                         Select Date
                       </button>
+                      <button
+                        onClick={() => navigate(`/dashboard/date-range?startDate=${startDate}&endDate=${endDate}`)}
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                          viewMode === 'dateRange' 
+                            ? 'bg-blue-600 text-white shadow-sm' 
+                            : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                      >
+                        Date Range
+                      </button>
                     </div>
                   </div>
 
@@ -323,7 +345,7 @@ function Dashboard() {
                           year: 'numeric' 
                         })}</span>
                       </div>
-                    ) : (
+                    ) : viewMode === 'date' ? (
                       <div className="flex items-center gap-3">
                         <label className="flex items-center gap-2 text-gray-700 font-medium text-sm">
                           <Calendar size={18} />
@@ -333,6 +355,28 @@ function Dashboard() {
                           type="date"
                           value={selectedDate}
                           onChange={(e) => setSelectedDate(e.target.value)}
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 text-gray-700 font-medium text-sm">
+                          <Calendar size={18} />
+                          Range:
+                        </label>
+                        <input
+                          type="date"
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          max={endDate}
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                        />
+                        <span className="text-gray-600 text-sm">to</span>
+                        <input
+                          type="date"
+                          value={endDate}
+                          onChange={(e) => setEndDate(e.target.value)}
+                          min={startDate}
                           className="px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
                         />
                       </div>
@@ -360,7 +404,7 @@ function Dashboard() {
                 <div className="card bg-gradient-to-br from-green-500 to-green-600 text-white hover:shadow-xl transition-shadow">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-green-100 text-sm font-medium mb-2">Present Today</p>
+                      <p className="text-green-100 text-sm font-medium mb-2">Present {viewMode === 'dateRange' ? 'in Range' : 'Today'}</p>
                       <h3 className="text-4xl font-bold">{stats.present}</h3>
                     </div>
                     <div className="bg-white p-4 rounded-full shadow-md">
@@ -373,7 +417,7 @@ function Dashboard() {
                 <div className="card bg-gradient-to-br from-red-500 to-red-600 text-white hover:shadow-xl transition-shadow">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-red-100 text-sm font-medium mb-2">Absent Today</p>
+                      <p className="text-red-100 text-sm font-medium mb-2">Absent {viewMode === 'dateRange' ? 'in Range' : 'Today'}</p>
                       <h3 className="text-4xl font-bold">{stats.absent}</h3>
                     </div>
                     <div className="bg-white p-4 rounded-full shadow-md">
