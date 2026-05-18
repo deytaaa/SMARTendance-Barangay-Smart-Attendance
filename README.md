@@ -116,6 +116,44 @@ Frontend will run on `http://localhost:5173`
 3. Connect USB webcam
 4. Run: `python attendance_qr.py`
 
+## 🌐 Hosting / Deployment
+
+This project is already structured for separate frontend and backend deployment.
+
+Recommended setup:
+
+1. Host the backend on a Node.js platform such as Railway or Render.
+2. Host the frontend on Vercel or Netlify.
+3. Point the frontend API URL to the hosted backend.
+4. Add the hosted frontend URL to the backend CORS allowlist.
+
+Backend production env example:
+
+```env
+PORT=5000
+NODE_ENV=production
+DATABASE_URL="your_production_database_url"
+DIRECT_URL="your_direct_database_url"
+JWT_SECRET="your_secure_jwt_secret"
+FRONTEND_URL=https://your-frontend-domain.com
+```
+
+Frontend production env example:
+
+```env
+VITE_API_URL=https://your-backend-domain.com/api
+```
+
+Deployment steps:
+
+1. Run Prisma migrations on the production database.
+2. Seed the database if needed.
+3. Set the backend environment variables on your hosting platform.
+4. Set the frontend `VITE_API_URL` to the deployed backend URL.
+5. Redeploy the frontend after updating the environment variable.
+
+If you want, I can also prepare the project for a specific platform like Railway + Vercel.
+
 ## 👤 Default User Accounts
 
 After seeding the database, you can log in with these accounts:

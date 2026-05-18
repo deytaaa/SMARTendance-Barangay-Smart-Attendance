@@ -12,9 +12,10 @@ module.exports = {
   cors: {
     // Support comma-separated list of origins with function validator
     origin: function(origin, callback) {
-      const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+      const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173,https://smartendance-git-main-mrdata-7009s-projects.vercel.app')
         .split(',')
-        .map(o => o.trim());
+        .map(o => o.trim())
+        .filter(Boolean);
       
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin || allowedOrigins.includes(origin)) {
